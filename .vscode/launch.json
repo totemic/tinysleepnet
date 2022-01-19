@@ -1,0 +1,25 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Python: Trainer",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--db", "sleepedf", "--gpu", "3", "--from_fold", "0", "--to_fold", "1"]
+        },
+
+        {
+            "name": "Python: Predict",
+            "type": "python",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "args": ["--config_file", "config/sleepedf.py", "--model_dir", "out_sleepedf/train", "--output_dir", "out_sleepedf/predict", "--log_file", "out_sleepedf/predict.log", "--use-best"]
+        }
+    ]
+}

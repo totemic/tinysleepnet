@@ -18,22 +18,32 @@ from utils import (get_balance_class_oversample,
                    save_seq_ids,
                    load_seq_ids)
 from logger import get_logger
+from pathlib import Path
+import re
 
-
-def load_data(eeg_path = '/nfs/homes/prince/ml/sleep_staging/session_export/D03/A0004/1625897580.406/eeg_1625897580.406.npz'):
+def load_data(eeg_path):
+    # = '/nfs/homes/prince/ml/sleep_staging/session_export/D03/A0004/1625897580.406/eeg_1625897580.406.npz'):
     zdata = np.load(eeg_path)
     eeg_ts = zdata['ts_array']
     eeg_data = zdata['eeg_array']
     eeg_val = zdata['valid_array']
     wlen_s = 30
     wlen = 256 * wlen_s
-    mod_data = -1 * (eeg_data.shape[0]%wlen)
-    m_aug_data = eeg_data[:mod_data]
+    #
+    crop = -1 * (eeg_data.shape[0]%wlen)
+    m_aug_data = eeg_data[:crop]
     re_aug_data = m_aug_data.reshape(int(m_aug_data.shape[0]/wlen),wlen,4)
-    ore_aug_data = re_aug_data[:,:,3]
-    resampled_aug = np.array([resample(x-np.mean(x), 3000) for x in ore_aug_data])
-    ocx = resampled_aug.reshape(resampled_aug.shape[0], resampled_aug.shape[1], 1, 1)
-    ocy = np.zeros(len(ocx))
+    #
+    xll=[]
+    for kk in range(4): ## MUSE 4-electrodes
+        ore_aug_data = re_aug_data[:,:,3]
+        ## downsample to 100hz
+        resampled_aug = np.array([resample(x-np.mean(x), 3000) for x in ore_aug_data])
+        xx = resampled_aug.reshape(resampled_aug.shape[0], resampled_aug.shape[1], 1, 1)
+        xll.append(xx)
+    #
+    ocx = np.stack(xll)
+    ocy = np.zeros(3000)
     return ocx, ocy
 
 
@@ -44,7 +54,15 @@ def predict(
     log_file,
     use_best=True,
 ):
-    # os.environ["CUDA_VISIBLE_DEVICES"] = "3"
+
+    os.environ["CUDA_VISIBLE_DEVICES"] = "7"
+
+    # eeg_path = '/nfs/homes/prince/ml/sleep_staging/session_export/'
+    eeg_path = './session_export/'
+
+    fll = [str(xx) for xx in Path(eeg_path).rglob('eeg_*.npz')]
+    # for fn in fll: print(fn)
+    # print(len(fll))
 
     spec = importlib.util.spec_from_file_location("*", config_file)
     config = importlib.util.module_from_spec(spec)
@@ -55,11 +73,6 @@ def predict(
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
 
-    subject_files = glob.glob(os.path.join(config["data_dir"], "*.npz"))
-
-    # Load subject IDs
-    fname = "{}.txt".format(config["dataset"])
-    seq_sids = load_seq_ids(fname)
 
     # Add dummy class weights
     config["class_weights"] = np.ones(config["n_classes"], dtype=np.float32)
@@ -74,49 +87,28 @@ def predict(
         use_best=use_best,
     )
 
-    # for night_idx, night_data in enumerate(zip(test_x, test_y)):
-    while True:
+    for fn in fll:
+        fno = re.sub('eeg_', 'ds_stages_',fn)
+        print('inference>', fn)
 
-        night_x, night_y = load_data()
+        night_x, night_y = load_data(fn)
 
-        # np.save(open(f'{sid}.npy','wb'), night_x)
-        # np.save(open(f'{sid}-1.npy','wb'), ocx)
+        oll = []
+        for kk in range(4): ## MUSE 4-electrodes
+            test_minibatch_fn = iterate_batch_multiple_seq_minibatches(
+                [night_x[kk]], [night_y],
+                batch_size=config["batch_size"],
+                seq_length=config["seq_length"],
+                shuffle_idx=None,
+                augment_seq=False,
+            )
+            test_outs = model.evaluate(test_minibatch_fn)
+            oll.append(test_outs["test/preds"])
 
-        test_minibatch_fn = iterate_batch_multiple_seq_minibatches(
-            [night_x], [night_y],
-            batch_size=config["batch_size"],
-            seq_length=config["seq_length"],
-            shuffle_idx=None,
-            augment_seq=False,
-        )
-        # if (config.get('augment_signal') is not None) and config['augment_signal']:
-        #     # Evaluate
-        #     test_outs = model.evaluate_aug(test_minibatch_fn)
-        # else:
-        #     # Evaluate
-        test_outs = model.evaluate(test_minibatch_fn)
+        stages = np.stack(oll)
 
-        # Save labels and predictions (each night of each subject)
-        save_dict = {
-            "y_true": test_outs["test/trues"],
-            "y_pred": test_outs["test/preds"],
-        }
-        # fname = os.path.basename(test_files[night_idx]).split(".")[0]
-        save_path = os.path.join(
-            output_dir,
-            "new_pred_{}.npz".format("test")
-        )
-        np.savez(save_path, **save_dict)
-        exit()
-
-
-        # fname = os.path.basename(test_files[night_idx]).split(".")[0]
-        # save_path = os.path.join(
-        #     output_dir,
-        #     "new_pred_{}.npz".format("test")
-        # )
-        # np.savez(save_path, **save_dict)
-        # exit()
+        print('stages>', fno, stages.shape)
+        np.savez(fno, stages)
 
 
 if __name__ == "__main__":

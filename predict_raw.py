@@ -36,7 +36,7 @@ def load_data(eeg_path):
     #
     xll=[]
     for kk in range(4): ## MUSE 4-electrodes
-        ore_aug_data = re_aug_data[:,:,3]
+        ore_aug_data = re_aug_data[:,:,kk]
         ## downsample to 100hz
         resampled_aug = np.array([resample(x-np.mean(x), 3000) for x in ore_aug_data])
         xx = resampled_aug.reshape(resampled_aug.shape[0], resampled_aug.shape[1], 1, 1)
@@ -105,10 +105,10 @@ def predict(
             test_outs = model.evaluate(test_minibatch_fn)
             oll.append(test_outs["test/preds"])
 
-        stages = np.stack(oll)
+        stages=np.stack(oll)
 
         print('stages>', fno, stages.shape)
-        np.savez(fno, stages)
+        np.savez(fno, stages=stages)
 
 
 if __name__ == "__main__":

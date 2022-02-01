@@ -130,3 +130,9 @@ dmypy.json
 
 .data/
 .out_sleepedf/
+
+# local
+data/
+out_*/
+*.npz
+session_export/
